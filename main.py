@@ -28,7 +28,7 @@ model = genai.GenerativeModel("gemini-1.5-flash")
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-@client.on(events.NewMessage(pattern=r"(?i)^/summary" , outgoing=true))
+@client.on(events.NewMessage(pattern=r"(?i)^/summary" , outgoing=True))
 async def handle_summary(event):
     me = await client.get_me()
     # Sirf aapke bhejne par chalega

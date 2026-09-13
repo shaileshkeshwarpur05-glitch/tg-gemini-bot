@@ -24,7 +24,12 @@ SESSION_STRING = os.environ["SESSION_STRING"]
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("models/gemini-1.5-flash")
+model = # Model initialization
+try:
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
+except Exception:
+    model = genai.GenerativeModel("gemini-pro")
+    
 
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)

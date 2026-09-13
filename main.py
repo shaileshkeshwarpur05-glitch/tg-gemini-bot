@@ -21,6 +21,12 @@ def run_server():
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 SESSION_STRING = os.environ["SESSION_STRING"]
+# Missing padding automatically fix karne ke liye
+SESSION_STRING = SESSION_STRING.strip()
+missing_padding = len(SESSION_STRING) % 4
+if missing_padding:
+    SESSION_STRING += "=" * (4 - missing_padding)
+    
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 
 genai.configure(api_key=GEMINI_KEY)

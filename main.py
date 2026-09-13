@@ -31,17 +31,29 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 async def handle_summary(event):
     parts = event.raw_text.strip().split()
     target_peer = None
+    target_name_query = None
     limit = 100
 
+    # Command parsing
     if len(parts) > 1:
-        param = parts[1]
-        if param.isdigit():
-            limit = int(param)
-            target_peer = event.chat_id
+        # Check agar last argument number (limit) hai
+        if parts[-1].isdigit() and len(parts) > 2:
+            limit = int(parts[-1])
+            search_terms = parts[1:-1]
+        elif parts[1].isdigit():
+            limit = int(parts[1])
+            search_terms = []
         else:
-            target_peer = param
-            if len(parts) > 2 and parts[2].isdigit():
-                limit = int(parts[2])
+            search_terms = parts[1:]
+
+        if search_terms:
+            arg = " ".join(search_terms)
+            if arg.startswith("@"):
+                target_peer = arg
+            else:
+                target_name_query = arg.lower()
+        else:
+            target_peer = event.chat_id
     elif event.is_private and event.chat_id == (await client.get_me()).id:
         target_peer = None
     else:
@@ -49,8 +61,21 @@ async def handle_summary(event):
 
     status_msg = await event.reply("Malik, Geminia aapan kaam pe lag gail ba...")
 
+    # Agar Display Name se dhoondhna ho
+    if target_name_query:
+        found = False
+        async for dialog in client.iter_dialogs():
+            if dialog.name and target_name_query in dialog.name.lower():
+                target_peer = dialog.id
+                found = True
+                break
+        if not found:
+            await status_msg.edit(f"Malik, '{target_name_query}' naam ka koi group ya chat nahi mila!")
+            return
+
     collected_text = []
 
+    # Specific chat/group scan
     if target_peer:
         try:
             entity = await client.get_entity(target_peer)
@@ -62,9 +87,10 @@ async def handle_summary(event):
                     sender_name = getattr(sender, "first_name", "User") or "User"
                     collected_text.append(f"{sender_name}: {msg.text}")
         except Exception as e:
-            await status_msg.edit(f"Sorry malik, Nalayak bani hm: {str(e)}")
+            await status_msg.edit(f"Sorry malik, 😔: {str(e)}")
             return
     else:
+        # Default: Sabhi unread chats ka scan
         async for dialog in client.iter_dialogs(limit=15):
             if dialog.unread_count > 0:
                 collected_text.append(f"\n--- Chat: {dialog.name} ({dialog.unread_count} unread) ---")
@@ -99,4 +125,4 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(main())
-    
+            

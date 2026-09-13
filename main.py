@@ -1,8 +1,9 @@
 import os
+import asyncio
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 import google.generativeai as genai
 
 # Render port requirement satisfy karne ke liye dummy server
@@ -10,32 +11,64 @@ class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is alive!")
+        self.wfile.write(b"UserBot Live!")
 
 def run_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), DummyServer)
     server.serve_forever()
 
-# Gemini setup
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+API_ID = int(os.environ["API_ID"])
+API_HASH = os.environ["API_HASH"]
+SESSION_STRING = os.environ["SESSION_STRING"]
+GEMINI_KEY = os.environ["GEMINI_API_KEY"]
+
+genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hi! Telegram ke messages ya text mujhe bhejo, main summary bana kar dunga.")
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-async def summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-    prompt = f"Summarize the following updates/conversation clearly in Hinglish bullet points:\n\n{user_text}"
+@client.on(events.NewMessage(pattern=r"(?i)^/summary"))
+async def handle_summary(event):
+    me = await client.get_me()
+    # Sirf aapke bhejne par chalega
+    if event.sender_id != me.id:
+        return
+
+    status_msg = await event.reply("Unread messages nikaal raha hoon, wait karein...")
+
+    collected_text = []
+    # Recent dialogs check karega
+    async for dialog in client.iter_dialogs(limit=15):
+        if dialog.unread_count > 0:
+            chat_name = dialog.name
+            collected_text.append(f"\n--- Chat: {chat_name} ({dialog.unread_count} unread) ---")
+            async for msg in client.iter_messages(dialog.id, limit=dialog.unread_count):
+                if msg.text:
+                    sender = await msg.get_sender()
+                    sender_name = getattr(sender, "first_name", "User") or "User"
+                    collected_text.append(f"{sender_name}: {msg.text}")
+
+    if not collected_text:
+        await status_msg.edit("Abhi koi naye unread messages nahi hain!")
+        return
+
+    raw_data = "\n".join(collected_text)[:8000]
+    prompt = (
+        "Summarize these unread Telegram chats clearly into concise Hinglish bullet points. "
+        "Highlight important updates, tasks, or urgent points:\n\n"
+        f"{raw_data}"
+    )
+
     response = model.generate_content(prompt)
-    await update.message.reply_text(response.text)
+    await status_msg.edit(response.text)
+
+async def main():
+    await client.start()
+    print("UserBot running...")
+    await client.run_until_disconnected()
 
 if __name__ == "__main__":
-    # Background me dummy server chalana taaki Render port scan pass ho jaye
     threading.Thread(target=run_server, daemon=True).start()
-    
-    app = ApplicationBuilder().token(os.environ["TELEGRAM_TOKEN"]).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, summarize))
-    app.run_polling()
+    asyncio.run(main())
     

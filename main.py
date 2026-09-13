@@ -80,7 +80,7 @@ async def handle_summary(event):
 
     raw_data = "\n".join(reversed(collected_text))[:8500]
     prompt = (
-        "Summarize these Telegram messages clearly into concise Hinglish bullet points. "
+        "Summarize these Telegram messages clearly into concise English bullet points. "
         "Highlight important updates, action items, or announcements:\n\n"
         f"{raw_data}"
     )

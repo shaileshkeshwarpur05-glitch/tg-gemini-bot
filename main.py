@@ -28,40 +28,77 @@ model = genai.GenerativeModel("gemini-1.5-flash")
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-@client.on(events.NewMessage(pattern=r"(?i)^/summary" , outgoing=True))
+@client.on(events.NewMessage(pattern=r"(?i)^/summary", outgoing=True))
 async def handle_summary(event):
-    me = await client.get_me()
-    # Sirf aapke bhejne par chalega
-    if event.sender_id != me.id:
-        return
+    parts = event.raw_text.strip().split()
+    target_peer = None
+    limit = 1000  # Default 1000 messages scan karega
 
-    status_msg = await event.reply("Unread messages nikaal raha hoon, wait karein...")
+    # 1. Check karein command ke aage username ya limit di hai kya (e.g. /summary @tech_news ya /summary 100)
+    if len(parts) > 1:
+        param = parts[1]
+        if param.isdigit():
+            limit = int(param)
+            target_peer = event.chat_id
+        else:
+            target_peer = param
+            if len(parts) > 2 and parts[2].isdigit():
+                limit = int(parts[2])
+    elif event.is_private and event.chat_id == (await client.get_me()).id:
+        # Saved Messages me sirf /summary bheja hai (Saari unread chats ka scan)
+        target_peer = None
+    else:
+        # Kisi group ya channel ke andar seedha /summary likha hai
+        target_peer = event.chat_id
+
+    status_msg = await event.reply("Malik, please wait...")
 
     collected_text = []
-    # Recent dialogs check karega
-    async for dialog in client.iter_dialogs(limit=15):
-        if dialog.unread_count > 0:
-            chat_name = dialog.name
-            collected_text.append(f"\n--- Chat: {chat_name} ({dialog.unread_count} unread) ---")
-            async for msg in client.iter_messages(dialog.id, limit=dialog.unread_count):
+
+    # Case A: Specific Group/Channel scan karna
+    if target_peer:
+        try:
+            entity = await client.get_entity(target_peer)
+            chat_title = getattr(entity, 'title', getattr(entity, 'first_name', 'Chat'))
+            collected_text.append(f"--- Chat: {chat_title} (Last {limit} messages) ---")
+            async for msg in client.iter_messages(entity, limit=limit):
                 if msg.text:
                     sender = await msg.get_sender()
                     sender_name = getattr(sender, "first_name", "User") or "User"
                     collected_text.append(f"{sender_name}: {msg.text}")
+        except Exception as e:
+            await status_msg.edit(f"Sorry malik, nalayak hu mai: {str(e)}")
+            return
 
-    if not collected_text:
-        await status_msg.edit("Abhi koi naye unread messages nahi hain!")
+    # Case B: Sabhi unread chats ka default scan
+    else:
+        async for dialog in client.iter_dialogs(limit=15):
+            if dialog.unread_count > 0:
+                collected_text.append(f"\n--- Chat: {dialog.name} ({dialog.unread_count} unread) ---")
+                async for msg in client.iter_messages(dialog.id, limit=dialog.unread_count):
+                    if msg.text:
+                        sender = await msg.get_sender()
+                        sender_name = getattr(sender, "first_name", "User") or "User"
+                        collected_text.append(f"{sender_name}: {msg.text}")
+
+    if not collected_text or len(collected_text) <= 1:
+        await status_msg.edit("Malik, kauno message naikhe kaile!")
         return
 
-    raw_data = "\n".join(collected_text)[:8000]
+    # Messages ko chronologically order karna aur prompt bhejna
+    raw_data = "\n".join(reversed(collected_text))[:8500]
     prompt = (
-        "Summarize these unread Telegram chats clearly into concise Hinglish bullet points. "
-        "Highlight important updates, tasks, or urgent points:\n\n"
+        "Summarize these Telegram chat messages clearly into concise English bullet points. "
+        "Highlight core discussion, key decisions, action items, or announcements:\n\n"
         f"{raw_data}"
     )
 
-    response = model.generate_content(prompt)
-    await status_msg.edit(response.text)
+    try:
+        response = model.generate_content(prompt)
+        await status_msg.edit(response.text)
+    except Exception as err:
+        await status_msg.edit(f"Malik, i gemini ke error ba sarwa aram karat ba: {str(err)}")
+
 
 async def main():
     await client.start()

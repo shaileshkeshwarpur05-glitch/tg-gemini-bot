@@ -23,23 +23,9 @@ SESSION_STRING = os.environ["SESSION_STRING"].strip()
 GEMINI_KEY = os.environ["GEMINI_API_KEY"].strip()
 
 genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel("gemini-3.6-flash")
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-
-def get_best_model():
-    # Pehle latest working model names try karenge
-    preferred = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"]
-    try:
-        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        for p in preferred:
-            for a in available:
-                if p in a:
-                    return genai.GenerativeModel(a)
-        if available:
-            return genai.GenerativeModel(available[0])
-    except Exception:
-        pass
-    return genai.GenerativeModel("gemini-2.5-flash")
 
 @client.on(events.NewMessage(pattern=r"(?i)^/summary", outgoing=True))
 async def handle_summary(event):
@@ -76,7 +62,7 @@ async def handle_summary(event):
                     sender_name = getattr(sender, "first_name", "User") or "User"
                     collected_text.append(f"{sender_name}: {msg.text}")
         except Exception as e:
-            await status_msg.edit(f"Sorry malik, chat access nahi ho saki: {str(e)}")
+            await status_msg.edit(f"Sorry malik, Nalayak bani hm: {str(e)}")
             return
     else:
         async for dialog in client.iter_dialogs(limit=15):
@@ -100,8 +86,7 @@ async def handle_summary(event):
     )
 
     try:
-        active_model = get_best_model()
-        response = active_model.generate_content(prompt)
+        response = model.generate_content(prompt)
         await status_msg.edit(response.text)
     except Exception as err:
         await status_msg.edit(f"Malik, Geminia kaam naikhe karal chahat: {str(err)}")
@@ -114,4 +99,4 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(main())
-            
+    
